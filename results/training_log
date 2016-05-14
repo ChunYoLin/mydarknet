@@ -1,0 +1,45 @@
+Loaded: 0.000022 seconds
+/Guanghan/dev/darknet-master/data/VOCdevkit/VOC2007/JPEGImages/003522.jpg
+Detection Avg IOU: 0.126063, Pos Cat: 0.110199, All Cat: 0.037979, Pos Obj: 0.041594, Any Obj: 0.017333, count: 70
+Detection Avg IOU: 0.139018, Pos Cat: 0.078378, All Cat: 0.036851, Pos Obj: 0.044997, Any Obj: 0.017823, count: 68
+211: 5.608212, 5.381306 avg, 0.002500 rate, 4.113114 seconds, 13504 images
+Loaded: 0.000021 seconds
+/Guanghan/dev/darknet-master/data/VOCdevkit/VOC2007/JPEGImages/008725.jpg
+Detection Avg IOU: 0.195886, Pos Cat: 0.077052, All Cat: 0.037260, Pos Obj: 0.052108, Any Obj: 0.017001, count: 77
+Detection Avg IOU: 0.220231, Pos Cat: 0.100348, All Cat: 0.038592, Pos Obj: 0.048114, Any Obj: 0.015581, count: 71
+212: 5.807130, 5.423888 avg, 0.002500 rate, 4.147358 seconds, 13568 images
+Loaded: 0.000019 seconds
+/Guanghan/dev/darknet-master/data/VOCdevkit/VOC2007/JPEGImages/002104.jpg
+Detection Avg IOU: 0.188521, Pos Cat: 0.323358, All Cat: 0.090344, Pos Obj: 0.027238, Any Obj: -0.001059, count: 64
+Detection Avg IOU: 0.155509, Pos Cat: 0.363296, All Cat: 0.081167, Pos Obj: 0.054361, Any Obj: 0.003914, count: 75
+213: 7.363863, 5.617886 avg, 0.002500 rate, 4.108034 seconds, 13632 images
+Loaded: 0.000020 seconds
+/Guanghan/dev/darknet-master/data/VOCdevkit/VOC2007/JPEGImages/008699.jpg
+Detection Avg IOU: 0.336293, Pos Cat: 0.160897, All Cat: 0.047430, Pos Obj: 0.055754, Any Obj: 0.016512, count: 83
+Detection Avg IOU: 0.367716, Pos Cat: 0.155903, All Cat: 0.045699, Pos Obj: 0.061526, Any Obj: 0.015312, count: 66
+214: 5.710763, 5.627173 avg, 0.002500 rate, 4.177563 seconds, 13696 images
+Loaded: 0.000021 seconds
+/Guanghan/dev/darknet-master/data/VOCdevkit/VOC2007/JPEGImages/007197.jpg
+Detection Avg IOU: 0.110652, Pos Cat: 0.085708, All Cat: 0.038396, Pos Obj: 0.058699, Any Obj: 0.022400, count: 97
+Detection Avg IOU: 0.148237, Pos Cat: 0.074008, All Cat: 0.037466, Pos Obj: 0.069303, Any Obj: 0.020609, count: 60
+215: 7.191768, 5.783633 avg, 0.002500 rate, 4.194478 seconds, 13760 images
+Loaded: 0.000020 seconds
+/Guanghan/dev/darknet-master/data/VOCdevkit/VOC2007/JPEGImages/000276.jpg
+Detection Avg IOU: 0.000356, Pos Cat: 10.013458, All Cat: 1.860401, Pos Obj: -0.385040, Any Obj: -0.748193, count: 71
+Detection Avg IOU: 0.000147, Pos Cat: 9.369902, All Cat: 1.851186, Pos Obj: 0.153506, Any Obj: -0.660497, count: 72
+216: 2975.564453, 302.761719 avg, 0.002500 rate, 4.162887 seconds, 13824 images
+Loaded: 0.000021 seconds
+/Guanghan/dev/darknet-master/data/VOCdevkit/VOC2007/JPEGImages/001068.jpg
+Detection Avg IOU: 0.000000, Pos Cat: -114970412213213455073967756804096.000000, All Cat: -24878856791001895092064205406208.000000, Pos Obj: -3259752717943619468851725467648.000000, Any Obj: 46454613922103523475245714374656.000000, count: 79
+Detection Avg IOU: 0.000000, Pos Cat: -72288696195919000121928956510208.000000, All Cat: -25468672355578758832336553377792.000000, Pos Obj: -11802051271328805064768464355328.000000, Any Obj: 46067196718246540951402674388992.000000, count: 66
+217: inf, inf avg, 0.002500 rate, 4.167140 seconds, 13888 images
+Loaded: 0.000021 seconds
+/Guanghan/dev/darknet-master/data/VOCdevkit/VOC2007/JPEGImages/003887.jpg
+Detection Avg IOU: nan, Pos Cat: nan, All Cat: nan, Pos Obj: nan, Any Obj: nan, count: 74
+Detection Avg IOU: nan, Pos Cat: nan, All Cat: nan, Pos Obj: nan, Any Obj: nan, count: 77
+218: nan, nan avg, 0.002500 rate, 4.048512 seconds, 13952 images
+Loaded: 0.000021 seconds
+/Guanghan/dev/darknet-master/data/VOCdevkit/VOC2007/JPEGImages/000989.jpg
+Detection Avg IOU: nan, Pos Cat: nan, All Cat: nan, Pos Obj: nan, Any Obj: nan, count: 75
+Detection Avg IOU: nan, Pos Cat: nan, All Cat: nan, Pos Obj: nan, Any Obj: nan, count: 72
+
