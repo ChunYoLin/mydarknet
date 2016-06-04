@@ -10,6 +10,7 @@ extern "C" {
 #include "parser.h"
 #include "box.h"
 #include "image.h"
+#include "thpool.h"
 #include <sys/time.h>
 }
 
@@ -32,10 +33,12 @@ static box *boxes;
 static network net;
 static image in   ;
 static image in_s ;
+static image in_m ;
 static image in_op1;
 static image in_op2;
 static image det  ;
 static image det_s;
+static image det_m;
 static image det_op1;
 static image det_op2;
 static image disp ;
@@ -45,9 +48,10 @@ static float fps = 0;
 static float demo_thresh = 0;
 static int w, h, depth, c, step= 0;
 static int MODE = -1;
-int Elastic = 1;
-void *fetch_in_thread(void *ptr)
+int *control = (int*)malloc(sizeof(int));
+void *fetch_in_thread(void *Elastic)
 {
+    //int elastic = *((int*)Elastic);
     cv::Mat frame_m;   
     cap >> frame_m;
     IplImage frame = frame_m;
@@ -86,22 +90,22 @@ if(step == 0)
     
     in = ipl_to_image(&frame);
     rgbgr_image(in);
-    if(!Elastic)in_s = resize_image(in, net.w, net.h);
-    else{
-    	in_s = ipl_to_image(&frame_ROIM);
-    	in_op1 = ipl_to_image(&frame_ROIop1);
-    	in_op2 = ipl_to_image(&frame_ROIop2);
-    	rgbgr_image(in_s);
-    	rgbgr_image(in_op1);
-    	rgbgr_image(in_op2);
-    }
+    in_s = resize_image(in, net.w, net.h);
+    in_m = ipl_to_image(&frame_ROIM);
+    in_op1 = ipl_to_image(&frame_ROIop1);
+    in_op2 = ipl_to_image(&frame_ROIop2);
+    rgbgr_image(in_s);
+    rgbgr_image(in_m);
+    rgbgr_image(in_op1);
+    rgbgr_image(in_op2);
     return 0;
 }
 
-void *detect_in_thread(void *ptr)
+void *detect_in_thread(void *Elastic)
 {
+    int elastic = *((int*)Elastic);
     float nms = .4;
-    if(!Elastic){
+    if(!elastic){
 	detection_layer l = net.layers[net.n-1];
 	float *X = det_s.data;
 	float *predictions = network_predict(net, X);
@@ -113,12 +117,18 @@ void *detect_in_thread(void *ptr)
     else{
 	//detect mandatory
 	detection_layer l = net.layers[net.n-1];
-	float *X = det_s.data;
+	float *X;
+	if(elastic == 1)X = det_m.data;
+	else if(elastic == 2)X = det_op1.data;
+	else if(elastic == 3)X = det_op2.data;
 	float *predictions = network_predict(net, X);
-	free_image(det_s);
+	if(elastic == 1)free_image(det_m);
+	else if(elastic == 2)free_image(det_op1);
+	else if(elastic == 3)free_image(det_op2);
 	convert_yolo_detections(predictions, l.classes, l.n, l.sqrt, l.side, 1, 1, demo_thresh, probs, boxes, 0);
 	if (nms > 0) do_nms(boxes, probs, l.side*l.side*l.n, l.classes, nms);
-	draw_detections(det, l.side*l.side*l.n, demo_thresh, boxes, probs, voc_names, voc_labels, CLS_NUM,1);
+	draw_detections(det, l.side*l.side*l.n, demo_thresh, boxes, probs, voc_names, voc_labels, CLS_NUM,elastic);
+	/*
 	//detect optional1
 	X = det_op1.data;
 	predictions = network_predict(net,X);
@@ -133,6 +143,8 @@ void *detect_in_thread(void *ptr)
 	convert_yolo_detections(predictions, l.classes, l.n, l.sqrt, l.side, 1, 1, demo_thresh, probs, boxes, 0);
 	if (nms > 0) do_nms(boxes, probs, l.side*l.side*l.n, l.classes, nms);
 	draw_detections(det, l.side*l.side*l.n, demo_thresh, boxes, probs, voc_names, voc_labels, CLS_NUM,3);
+	*/
+	
     }
     //print FPS
     printf("\033[2J");
@@ -194,37 +206,57 @@ else
     boxes = (box *)calloc(l.side*l.side*l.n, sizeof(box));
     probs = (float **)calloc(l.side*l.side*l.n, sizeof(float *));
     for(j = 0; j < l.side*l.side*l.n; ++j) probs[j] = (float *)calloc(l.classes, sizeof(float *));
-
-    pthread_t fetch_thread;
-    pthread_t detect_thread;
-    fetch_in_thread(0);
+    threadpool thpool_cpu = thpool_init(4);
+    threadpool thpool_gpu = thpool_init(1);
+    //pthread_t fetch_thread;
+    //pthread_t detect_thread;
+    int *Elastic = (int*)malloc(sizeof(int));
+    *Elastic = 1;
+    fetch_in_thread(Elastic);
     det = in;
     det_s = in_s;
+    det_m = in_m;
     det_op1 = in_op1;
     det_op2 = in_op2;
-    fetch_in_thread(0);
-    detect_in_thread(0);
+    fetch_in_thread(Elastic);
+    detect_in_thread(Elastic);
     disp = det;
     det = in;
     det_s = in_s;
+    det_m = in_m;
     det_op1 = in_op1;
     det_op2 = in_op2;
+    *control = 1;
     while(1){
         struct timeval tval_before, tval_after, tval_result;
-        
-        if(pthread_create(&fetch_thread, 0, fetch_in_thread, 0)) error("Thread creation failed");
+        //if(pthread_create(&fetch_thread, 0, fetch_in_thread, 0)) error("Thread creation failed");	
 	gettimeofday(&tval_before, NULL);
-        if(pthread_create(&detect_thread, 0, detect_in_thread, 0)) error("Thread creation failed");
+	if(*control == 0){	
+	    thpool_add_work(thpool_cpu,fetch_in_thread,Elastic);
+	    thpool_add_work(thpool_gpu,detect_in_thread,Elastic);
+	}
+	else if(*control == 1){
+	    thpool_add_work(thpool_cpu,fetch_in_thread,Elastic);
+	    thpool_add_work(thpool_gpu,detect_in_thread,Elastic);
+	    thpool_wait(thpool_gpu);
+	    *Elastic = 2;
+	    thpool_add_work(thpool_gpu,detect_in_thread,Elastic);
+	}
+	//if(pthread_create(&detect_thread, 0, detect_in_thread, 0)) error("Thread creation failed");
  	//if(pthread_create(&detect_thread_op1, 0, detect_in_thread_op1, 0)) error("Thread creation failed");
-	show_image(disp, "YOLO");       
+	//printf("123\n");	
+	show_image(disp, "YOLO");
 	free_image(disp);
         cvWaitKey(1);
-        pthread_join(fetch_thread, 0);
-        pthread_join(detect_thread, 0);
+        //pthread_join(fetch_thread, 0);
+        //pthread_join(detect_thread, 0);
 	//pthread_join(detect_thread_op1, 0);
+	thpool_wait(thpool_cpu);
+	thpool_wait(thpool_gpu);
         disp  = det;
         det   = in;
         det_s = in_s;
+        det_m = in_m;
         det_op1 = in_op1;
         det_op2 = in_op2;
         gettimeofday(&tval_after, NULL);
