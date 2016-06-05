@@ -48,6 +48,10 @@ static float fps = 0;
 static float demo_thresh = 0;
 static int w, h, depth, c, step= 0;
 static int MODE = -1;
+typedef struct ObjDetArg{
+    image ROI;
+    int draw;
+}ODA;
 int *control = (int*)malloc(sizeof(int));
 void *fetch_in_thread(void *Elastic)
 {
@@ -101,56 +105,23 @@ if(step == 0)
     return 0;
 }
 
-void *detect_in_thread(void *Elastic)
+void *detect_in_thread(void *arg)
 {
-    int elastic = *((int*)Elastic);
+    ODA tmp = *((ODA*)arg);
     float nms = .4;
-    if(!elastic){
-	detection_layer l = net.layers[net.n-1];
-	float *X = det_s.data;
-	float *predictions = network_predict(net, X);
-	free_image(det_s);
-        convert_yolo_detections(predictions, l.classes, l.n, l.sqrt, l.side, 1, 1, demo_thresh, probs, boxes, 0);
-	if (nms > 0) do_nms(boxes, probs, l.side*l.side*l.n, l.classes, nms);
-	draw_detections(det, l.side*l.side*l.n, demo_thresh, boxes, probs, voc_names, voc_labels, CLS_NUM,0);
-    }
-    else{
-	//detect mandatory
-	detection_layer l = net.layers[net.n-1];
-	float *X;
-	if(elastic == 1)X = det_m.data;
-	else if(elastic == 2)X = det_op1.data;
-	else if(elastic == 3)X = det_op2.data;
-	float *predictions = network_predict(net, X);
-	if(elastic == 1)free_image(det_m);
-	else if(elastic == 2)free_image(det_op1);
-	else if(elastic == 3)free_image(det_op2);
-	convert_yolo_detections(predictions, l.classes, l.n, l.sqrt, l.side, 1, 1, demo_thresh, probs, boxes, 0);
-	if (nms > 0) do_nms(boxes, probs, l.side*l.side*l.n, l.classes, nms);
-	draw_detections(det, l.side*l.side*l.n, demo_thresh, boxes, probs, voc_names, voc_labels, CLS_NUM,elastic);
-	/*
-	//detect optional1
-	X = det_op1.data;
-	predictions = network_predict(net,X);
-	free_image(det_op1);
-	convert_yolo_detections(predictions, l.classes, l.n, l.sqrt, l.side, 1, 1, demo_thresh, probs, boxes, 0);
-	if (nms > 0) do_nms(boxes, probs, l.side*l.side*l.n, l.classes, nms);
-	draw_detections(det, l.side*l.side*l.n, demo_thresh, boxes, probs, voc_names, voc_labels, CLS_NUM,2);
-	//detect optional2
-	X = det_op2.data;
-	predictions = network_predict(net,X);
-	free_image(det_op2);
-	convert_yolo_detections(predictions, l.classes, l.n, l.sqrt, l.side, 1, 1, demo_thresh, probs, boxes, 0);
-	if (nms > 0) do_nms(boxes, probs, l.side*l.side*l.n, l.classes, nms);
-	draw_detections(det, l.side*l.side*l.n, demo_thresh, boxes, probs, voc_names, voc_labels, CLS_NUM,3);
-	*/
-	
-    }
+    detection_layer l = net.layers[net.n-1];
+    float *X = tmp.ROI.data;
+    float *predictions = network_predict(net, X);
+    free_image(tmp.ROI);
+    convert_yolo_detections(predictions, l.classes, l.n, l.sqrt, l.side, 1, 1, demo_thresh, probs, boxes, 0);
+    if (nms > 0) do_nms(boxes, probs, l.side*l.side*l.n, l.classes, nms);
+    draw_detections(det, l.side*l.side*l.n, demo_thresh, boxes, probs, voc_names, voc_labels, CLS_NUM,tmp.draw);
     //print FPS
     printf("\033[2J");
     printf("\033[1;1H");
     printf("\nFPS:%.0f\n",fps);
     printf("Objects:\n\n");
+    /*
     if(MODE == 1)
     {
         IplImage* outputIpl= image_to_Ipl(det, w, h, depth, c, step);
@@ -159,11 +130,11 @@ void *detect_in_thread(void *Elastic)
         cvNamedWindow("image", CV_WINDOW_AUTOSIZE);
         cvShowImage("image", outputIpl); 
         cvWaitKey(1);  
-        */
+        
         cvReleaseImage(&outputIpl);
         cap_out << outputMat;
         outputMat.release();
-     }
+     }*/
 
     return 0;
 }
@@ -195,9 +166,9 @@ else
     if(!cap.isOpened()) error("Couldn't read video file.\n");
 
     cv::Size S = cv::Size((int)videoCap.get(CV_CAP_PROP_FRAME_WIDTH), (int)videoCap.get(CV_CAP_PROP_FRAME_HEIGHT));
-    cv::VideoWriter outputVideo("out.avi", CV_FOURCC('D','I','V','X'), videoCap.get(CV_CAP_PROP_FPS), S, true);
-    if(!outputVideo.isOpened()) error("Couldn't write video file.\n");
-    cap_out = outputVideo;
+    //cv::VideoWriter outputVideo("out.avi", CV_FOURCC('D','I','V','X'), videoCap.get(CV_CAP_PROP_FPS), S, true);
+    //if(!outputVideo.isOpened()) error("Couldn't write video file.\n");
+    //cap_out = outputVideo;
 }
  
     detection_layer l = net.layers[net.n-1];
@@ -210,47 +181,60 @@ else
     threadpool thpool_gpu = thpool_init(1);
     //pthread_t fetch_thread;
     //pthread_t detect_thread;
-    int *Elastic = (int*)malloc(sizeof(int));
-    *Elastic = 1;
-    fetch_in_thread(Elastic);
+    ODA *arg = (ODA*)malloc(sizeof(ODA));
+    fetch_in_thread(0);
     det = in;
     det_s = in_s;
     det_m = in_m;
     det_op1 = in_op1;
     det_op2 = in_op2;
-    fetch_in_thread(Elastic);
-    detect_in_thread(Elastic);
+    fetch_in_thread(arg);
+    detect_in_thread(arg);
     disp = det;
     det = in;
     det_s = in_s;
     det_m = in_m;
     det_op1 = in_op1;
     det_op2 = in_op2;
-    *control = 1;
+    *control = 2;
     while(1){
-        struct timeval tval_before, tval_after, tval_result;
-        //if(pthread_create(&fetch_thread, 0, fetch_in_thread, 0)) error("Thread creation failed");	
+        struct timeval tval_before, tval_after, tval_result;	
 	gettimeofday(&tval_before, NULL);
+		
 	if(*control == 0){	
-	    thpool_add_work(thpool_cpu,fetch_in_thread,Elastic);
-	    thpool_add_work(thpool_gpu,detect_in_thread,Elastic);
+	    thpool_add_work(thpool_cpu,fetch_in_thread,0);
+	    arg->ROI = det_m;
+	    arg->draw = 1;
+	    thpool_add_work(thpool_gpu,detect_in_thread,arg);
 	}
 	else if(*control == 1){
-	    thpool_add_work(thpool_cpu,fetch_in_thread,Elastic);
-	    thpool_add_work(thpool_gpu,detect_in_thread,Elastic);
+	    thpool_add_work(thpool_cpu,fetch_in_thread,0);
+	    arg->ROI = det_m;
+	    arg->draw = 1;
+	    thpool_add_work(thpool_gpu,detect_in_thread,arg);
 	    thpool_wait(thpool_gpu);
-	    *Elastic = 2;
-	    thpool_add_work(thpool_gpu,detect_in_thread,Elastic);
+	    arg->ROI = det_op1;
+	    arg->draw = 2;
+	    thpool_add_work(thpool_gpu,detect_in_thread,arg);
 	}
-	//if(pthread_create(&detect_thread, 0, detect_in_thread, 0)) error("Thread creation failed");
- 	//if(pthread_create(&detect_thread_op1, 0, detect_in_thread_op1, 0)) error("Thread creation failed");
-	//printf("123\n");	
+	else if(*control == 2){
+	    thpool_add_work(thpool_cpu,fetch_in_thread,0);
+	    arg->ROI = det_m;
+	    arg->draw = 1;
+	    thpool_add_work(thpool_gpu,detect_in_thread,arg);
+	    thpool_wait(thpool_gpu);
+	    arg->ROI = det_op1;
+	    arg->draw = 2;
+	    thpool_wait(thpool_gpu);
+	    thpool_add_work(thpool_gpu,detect_in_thread,arg);
+	    thpool_wait(thpool_gpu);
+	    arg->ROI = det_op2;
+	    arg->draw = 3;
+	    thpool_add_work(thpool_gpu,detect_in_thread,arg);
+	}
 	show_image(disp, "YOLO");
 	free_image(disp);
         cvWaitKey(1);
-        //pthread_join(fetch_thread, 0);
-        //pthread_join(detect_thread, 0);
-	//pthread_join(detect_thread_op1, 0);
 	thpool_wait(thpool_cpu);
 	thpool_wait(thpool_gpu);
         disp  = det;
