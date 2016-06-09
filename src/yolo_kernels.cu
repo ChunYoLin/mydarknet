@@ -12,6 +12,8 @@ extern "C" {
 #include "image.h"
 #include "thpool.h"
 #include <sys/time.h>
+#include <signal.h>
+#include <unistd.h>
 }
 
 /* Change class number here */
@@ -48,16 +50,21 @@ static float fps = 0;
 static float demo_thresh = 0;
 static int w, h, depth, c, step= 0;
 static int MODE = -1;
+timer_t timer_fetch,timer_m,timer_op1,timer_op2;
 typedef struct ObjDetArg{
     image ROI;
     int draw;
 }ODA;
-int *control = (int*)malloc(sizeof(int));
-void *fetch_in_thread(void *Elastic)
-{
+threadpool thpool_cpu = thpool_init(4);
+threadpool thpool_gpu = thpool_init(1);
+void *fetch_in_thread(void *Elastic){
+    struct timeval tval_before, tval_after, tval_result;
+    
     //int elastic = *((int*)Elastic);
     cv::Mat frame_m;   
+    gettimeofday(&tval_before,NULL);   
     cap >> frame_m;
+    gettimeofday(&tval_after,NULL); 
     IplImage frame = frame_m;
     //mandatory
     cv::Mat frame_cropM;
@@ -83,14 +90,6 @@ void *fetch_in_thread(void *Elastic)
     frame_cropop2 = frame_m(ROI_op2).clone();
     cv::rectangle(frame_m,ROI_op2,cv::Scalar(255,0,0),2);
     IplImage frame_ROIop2 = frame_cropop2;
-if(step == 0)
-{
-    w = frame.width;
-    h = frame.height;
-    c = frame.nChannels;
-    depth= frame.depth; 
-    step = frame.widthStep;
-}   
     
     in = ipl_to_image(&frame);
     rgbgr_image(in);
@@ -102,6 +101,9 @@ if(step == 0)
     rgbgr_image(in_m);
     rgbgr_image(in_op1);
     rgbgr_image(in_op2);
+    
+    timersub(&tval_after, &tval_before, &tval_result);
+    printf("%f\n",((long int)tval_result.tv_usec)/1000000.f);
     return 0;
 }
 
@@ -112,32 +114,83 @@ void *detect_in_thread(void *arg)
     detection_layer l = net.layers[net.n-1];
     float *X = tmp.ROI.data;
     float *predictions = network_predict(net, X);
-    free_image(tmp.ROI);
+    //free_image(tmp.ROI);
     convert_yolo_detections(predictions, l.classes, l.n, l.sqrt, l.side, 1, 1, demo_thresh, probs, boxes, 0);
     if (nms > 0) do_nms(boxes, probs, l.side*l.side*l.n, l.classes, nms);
     draw_detections(det, l.side*l.side*l.n, demo_thresh, boxes, probs, voc_names, voc_labels, CLS_NUM,tmp.draw);
     //print FPS
-    printf("\033[2J");
-    printf("\033[1;1H");
-    printf("\nFPS:%.0f\n",fps);
-    printf("Objects:\n\n");
-    /*
-    if(MODE == 1)
-    {
-        IplImage* outputIpl= image_to_Ipl(det, w, h, depth, c, step);
-        cv::Mat outputMat = cv::cvarrToMat(outputIpl, true);
-        /*
-        cvNamedWindow("image", CV_WINDOW_AUTOSIZE);
-        cvShowImage("image", outputIpl); 
-        cvWaitKey(1);  
-        
-        cvReleaseImage(&outputIpl);
-        cap_out << outputMat;
-        outputMat.release();
-     }*/
+    //printf("\033[2J");
+    //printf("\033[1;1H");
+    //printf("\nFPS:%.0f\n",fps);
+    //printf("Objects:\n\n");
 
     return 0;
 }
+
+void timerHandler( int sig, siginfo_t *si, void *uc ){
+    timer_t *tidp;
+    tidp = (timer_t *)si->si_value.sival_ptr;
+    ODA *tmp = (ODA*)malloc(sizeof(ODA));
+    if ( *tidp == timer_fetch ){
+	printf("add work fetch\n");
+	thpool_add_work(thpool_cpu,fetch_in_thread,0);	    	
+    }
+    else if ( *tidp == timer_m ){
+	printf("add work detect mandatory\n");
+	tmp->ROI = in_m;
+	tmp->draw = 1;
+        thpool_add_work(thpool_gpu,detect_in_thread,tmp);
+    }
+    else if ( *tidp == timer_op1 ){
+	printf("add work detect optional1\n");
+	tmp->ROI = in_op1;
+	tmp->draw = 2;
+        thpool_add_work(thpool_gpu,detect_in_thread,tmp);
+    }
+    else if ( *tidp == timer_op2 ){
+	printf("add work detect optional2\n");
+	tmp->ROI = in_op2;
+	tmp->draw = 3;
+        thpool_add_work(thpool_gpu,detect_in_thread,tmp);
+    }
+}
+int makeTimer( char *name, timer_t *timerID, int expireMS, int intervalMS ){
+    struct sigevent te;
+    struct itimerspec its;
+    struct sigaction sa;
+    int sigNo = SIGRTMIN;
+    /* Set up signal handler. */
+    sa.sa_flags = SA_SIGINFO;
+    sa.sa_sigaction = timerHandler;
+    sigemptyset(&sa.sa_mask);
+    if (sigaction(sigNo, &sa, NULL) == -1){
+        printf("error");
+    }
+    /* Set and enable alarm */
+    te.sigev_notify = SIGEV_SIGNAL;
+    te.sigev_signo = sigNo;
+    te.sigev_value.sival_ptr = timerID;
+    timer_create(CLOCK_REALTIME, &te, timerID);
+    its.it_interval.tv_sec = 0;
+    its.it_interval.tv_nsec = intervalMS * 1000000;
+    its.it_value.tv_sec = 0;
+    its.it_value.tv_nsec = expireMS * 1000000;
+    timer_settime(*timerID, 0, &its, NULL);
+    return(0);
+}
+
+void *TIMER(void *mode){
+    int tmode = *((int*)mode);
+    if(tmode == 0){
+	makeTimer("Timer_fetch", &timer_fetch, 33, 33);
+    	makeTimer("Timer_mandartory", &timer_m, 100, 100);
+	//makeTimer("Timer_optional1", &timer_op1, 200, 200);
+    	//makeTimer("Timer_optionla2", &timer_op2, 200, 200);
+    }
+    while(1);
+}
+
+
 extern "C" void demo_yolo(char *cfgfile, char *weightfile, float thresh, int cam_index, char *videofile)
 {
     demo_thresh = thresh;
@@ -177,10 +230,7 @@ else
     boxes = (box *)calloc(l.side*l.side*l.n, sizeof(box));
     probs = (float **)calloc(l.side*l.side*l.n, sizeof(float *));
     for(j = 0; j < l.side*l.side*l.n; ++j) probs[j] = (float *)calloc(l.classes, sizeof(float *));
-    threadpool thpool_cpu = thpool_init(4);
-    threadpool thpool_gpu = thpool_init(1);
-    //pthread_t fetch_thread;
-    //pthread_t detect_thread;
+    pthread_t timer;
     ODA *arg = (ODA*)malloc(sizeof(ODA));
     fetch_in_thread(0);
     det = in;
@@ -188,6 +238,8 @@ else
     det_m = in_m;
     det_op1 = in_op1;
     det_op2 = in_op2;
+    arg->ROI = det_m;
+    arg->draw = 0;
     fetch_in_thread(arg);
     detect_in_thread(arg);
     disp = det;
@@ -196,54 +248,28 @@ else
     det_m = in_m;
     det_op1 = in_op1;
     det_op2 = in_op2;
-    *control = 2;
+    int flag = 0;
+    fetch_in_thread(0);
     while(1){
-        struct timeval tval_before, tval_after, tval_result;	
-	gettimeofday(&tval_before, NULL);
-		
-	if(*control == 0){	
-	    thpool_add_work(thpool_cpu,fetch_in_thread,0);
-	    arg->ROI = det_m;
-	    arg->draw = 1;
-	    thpool_add_work(thpool_gpu,detect_in_thread,arg);
-	}
-	else if(*control == 1){
-	    thpool_add_work(thpool_cpu,fetch_in_thread,0);
-	    arg->ROI = det_m;
-	    arg->draw = 1;
-	    thpool_add_work(thpool_gpu,detect_in_thread,arg);
-	    thpool_wait(thpool_gpu);
-	    arg->ROI = det_op1;
-	    arg->draw = 2;
-	    thpool_add_work(thpool_gpu,detect_in_thread,arg);
-	}
-	else if(*control == 2){
-	    thpool_add_work(thpool_cpu,fetch_in_thread,0);
-	    arg->ROI = det_m;
-	    arg->draw = 1;
-	    thpool_add_work(thpool_gpu,detect_in_thread,arg);
-	    thpool_wait(thpool_gpu);
-	    arg->ROI = det_op1;
-	    arg->draw = 2;
-	    thpool_wait(thpool_gpu);
-	    thpool_add_work(thpool_gpu,detect_in_thread,arg);
-	    thpool_wait(thpool_gpu);
-	    arg->ROI = det_op2;
-	    arg->draw = 3;
-	    thpool_add_work(thpool_gpu,detect_in_thread,arg);
-	}
+        struct timeval tval_before, tval_after, tval_result;
+	gettimeofday(&tval_before,NULL);
+	//thpool_add_work(thpool_cpu,fetch_in_thread,0);
+	int *mode = (int*)malloc(sizeof(int));
+	*mode = 0;
+	if(!flag)pthread_create(&timer,0,TIMER,mode);
+	flag = 1;
+	gettimeofday(&tval_after,NULL);
 	show_image(disp, "YOLO");
-	free_image(disp);
+	//free_image(disp);
         cvWaitKey(1);
-	thpool_wait(thpool_cpu);
-	thpool_wait(thpool_gpu);
+	//thpool_wait(thpool_cpu);
         disp  = det;
         det   = in;
         det_s = in_s;
         det_m = in_m;
         det_op1 = in_op1;
         det_op2 = in_op2;
-        gettimeofday(&tval_after, NULL);
+ 
         timersub(&tval_after, &tval_before, &tval_result);
         float curr = 1000000.f/((long int)tval_result.tv_usec);
         fps = .9*fps + .1*curr;
