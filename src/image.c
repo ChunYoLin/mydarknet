@@ -129,7 +129,7 @@ void draw_detections(image im, int num, float thresh, box *boxes, float **probs,
         float prob = probs[i][class];
         if(prob > thresh){
             int width = pow(prob, 1./2.)*10+1;
-            printf("%s: %.2f\n",names[class], prob);
+            //printf("%s: %.2f\n",names[class], prob);
             int offset = class*17 % classes;
             float red = get_color(0,offset,classes);
             float green = get_color(1,offset,classes);
@@ -192,8 +192,79 @@ void draw_detections(image im, int num, float thresh, box *boxes, float **probs,
 	    	top += 560;
 	    	bot += 560;
 	    }
-	    //int biasl = im.w/2 - left;
-	    //int biasr = im.w/2 - right;	
+	    else if(Elastic == 4){
+		printf("fuck\n");
+	    	left  = (b.x-b.w/2.)*448;
+		right = (b.x+b.w/2.)*448;
+		top   = (b.y-b.h/2.)*448;
+		bot   = (b.y+b.h/2.)*448;
+		if(left < 0) left = 0;
+		if(right > im.w-1) right = 448-1;
+		if(top < 0) top = 0;
+		if(bot > im.h-1) bot = 448-1;
+		left += 886;
+	    	right += 886;
+	    	top += 112;
+	    	bot += 112;
+	    }
+	    else if(Elastic == 5){
+	    	left  = (b.x-b.w/2.)*448;
+		right = (b.x+b.w/2.)*448;
+		top   = (b.y-b.h/2.)*448;
+		bot   = (b.y+b.h/2.)*448;
+		if(left < 0) left = 0;
+		if(right > im.w-1) right = 448-1;
+		if(top < 0) top = 0;
+		if(bot > im.h-1) bot = 448-1;
+		left += 438;
+	    	right += 438;
+	    	top += 112;
+	    	bot += 112;
+	    }
+	    else if(Elastic == 6){
+	    	left  = (b.x-b.w/2.)*448;
+		right = (b.x+b.w/2.)*448;
+		top   = (b.y-b.h/2.)*448;
+		bot   = (b.y+b.h/2.)*448;
+		if(left < 0) left = 0;
+		if(right > im.w-1) right = 448-1;
+		if(top < 0) top = 0;
+		if(bot > im.h-1) bot = 448-1;
+		left += 1334;
+	    	right += 1334;
+	    	top += 112;
+	    	bot += 112;
+	    }
+	    else if(Elastic == 7){
+	    	left  = (b.x-b.w/2.)*448;
+		right = (b.x+b.w/2.)*448;
+		top   = (b.y-b.h/2.)*448;
+		bot   = (b.y+b.h/2.)*448;
+		if(left < 0) left = 0;
+		if(right > im.w-1) right = 448-1;
+		if(top < 0) top = 0;
+		if(bot > im.h-1) bot = 448-1;
+		left += 0;
+	    	right += 0;
+	    	top += 112;
+	    	bot += 112;
+	    }
+	    else if(Elastic == 8){
+	    	left  = (b.x-b.w/2.)*448;
+		right = (b.x+b.w/2.)*448;
+		top   = (b.y-b.h/2.)*448;
+		bot   = (b.y+b.h/2.)*448;
+		if(left < 0) left = 0;
+		if(right > im.w-1) right = 448-1;
+		if(top < 0) top = 0;
+		if(bot > im.h-1) bot = 448-1;
+		left += 0;
+	    	right += 0;
+	    	top += 560;
+	    	bot += 560;
+	    }
+
+		
 	    if (labels) draw_label(im, top + width, left, labels[class], rgb);
             draw_box_width(im, left, top, right, bot, width, red, green, blue);
 	    /*
@@ -792,7 +863,9 @@ void test_resize(char *filename)
 #ifdef OPENCV
 image ipl_to_image(IplImage* src)
 {
+    
     unsigned char* data = (unsigned char*)src->imageData;
+    
     int h = src->height;
     int w = src->width;
     int c = src->nChannels;
@@ -807,7 +880,8 @@ image ipl_to_image(IplImage* src)
             }
         }
     }
-   
+    
+    
     return out;
 }
 
