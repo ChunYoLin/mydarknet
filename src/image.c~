@@ -880,7 +880,7 @@ image ipl_to_image(IplImage* src)
             }
         }
     }
-    free(data);
+    
     
     return out;
 }
