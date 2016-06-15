@@ -57,8 +57,14 @@ typedef struct Ela_frame{
     image wholeframe;
 }Eframe;
 typedef struct Ela_frame_state{
-    pthread_mutex_t rwmutex;
-	pthread_cond_t cond;
+    pthread_mutex_t fetch_mutex;
+	pthread_mutex_t draw_mmutex;
+	pthread_mutex_t draw_op1mutex;
+	pthread_mutex_t draw_op2mutex;
+	pthread_cond_t fetch_cond;
+	pthread_cond_t draw_mcond;
+	pthread_cond_t draw_op1cond;
+	pthread_cond_t draw_op2cond;
     volatile int fetch;
     volatile int draw_m;
     volatile int draw_op1;
@@ -116,10 +122,10 @@ void *fetch_in_thread(void *Elastic){
     printf("time: %ld ",tv.tv_usec/1000);
     printf("finish fetch frame %d \n",current_fetch_id);
 	
-    pthread_mutex_lock(&frame_buffer_s[current_fetch_id].rwmutex);
-	pthread_cond_signal(&frame_buffer_s[current_fetch_id].cond);
+    pthread_mutex_lock(&frame_buffer_s[current_fetch_id].fetch_mutex);
+	pthread_cond_broadcast(&frame_buffer_s[current_fetch_id].fetch_cond);
     frame_buffer_s[current_fetch_id].fetch = 1;
-    pthread_mutex_unlock(&frame_buffer_s[current_fetch_id].rwmutex);
+    pthread_mutex_unlock(&frame_buffer_s[current_fetch_id].fetch_mutex);
 
     pthread_mutex_lock(&mutex_current_fetch);
     current_fetch_id++;
@@ -134,12 +140,13 @@ void *detect_in_thread(void *arg)
     image ROI;
     Eframe detectframe;
 
-	pthread_mutex_lock(&frame_buffer_s[tmp.frameid].rwmutex);
+	/*pthread_mutex_lock(&frame_buffer_s[tmp.frameid].rwmutex);
 	while(!frame_buffer_s[tmp.frameid].fetch){
-		pthread_cond_wait(&frame_buffer_s[tmp.frameid].cond,&frame_buffer_s[tmp.frameid].rwmutex);
+		pthread_cond_wait(&frame_buffer_s[tmp.frameid].fetchcond,&frame_buffer_s[tmp.frameid].rwmutex);
 	}
 	pthread_mutex_unlock(&frame_buffer_s[tmp.frameid].rwmutex);
-    
+    */
+	while(!frame_buffer_s[tmp.frameid].fetch);
     pthread_mutex_lock(&frame_buffer[tmp.frameid%BUFFERSIZE].rwmutex);
     detectframe = frame_buffer[tmp.frameid%BUFFERSIZE];
     pthread_mutex_unlock(&frame_buffer[tmp.frameid%BUFFERSIZE].rwmutex);
@@ -173,29 +180,34 @@ void *detect_in_thread(void *arg)
     pthread_mutex_unlock(&frame_buffer[tmp.frameid%BUFFERSIZE].rwmutex);
     gettimeofday(&tv,&tz);
     printf("time: %ld ",tv.tv_usec/1000);
-    pthread_mutex_lock(&frame_buffer_s[tmp.frameid].rwmutex);
+    
     if(tmp.draw == 1){
+		pthread_mutex_lock(&frame_buffer_s[tmp.frameid].draw_mmutex);
 		frame_buffer_s[tmp.frameid].draw_m = 1;
+		pthread_mutex_unlock(&frame_buffer_s[tmp.frameid].draw_mmutex);
 		printf("finish detect frame %d's mandatory \n",tmp.frameid);
 		pthread_mutex_lock(&mutex_current_m);
 		current_m_id+=step_m;
 		pthread_mutex_unlock(&mutex_current_m);
     }
     else if(tmp.draw == 2){
+		pthread_mutex_lock(&frame_buffer_s[tmp.frameid].draw_op1mutex);
 		frame_buffer_s[tmp.frameid].draw_op1 = 1;
+		pthread_mutex_unlock(&frame_buffer_s[tmp.frameid].draw_op1mutex);
 		printf("finish detect frame %d's optional1 \n",tmp.frameid);
 		pthread_mutex_lock(&mutex_current_op1);
 		current_op1_id+=step_op1;
 		pthread_mutex_unlock(&mutex_current_op1);
     }
     else if(tmp.draw == 3){
+		pthread_mutex_lock(&frame_buffer_s[tmp.frameid].draw_op2mutex);
 		frame_buffer_s[tmp.frameid].draw_op2 = 1;
+		pthread_mutex_unlock(&frame_buffer_s[tmp.frameid].draw_op2mutex);
     	printf("finish detect frame %d's optional2 \n",tmp.frameid);
 		pthread_mutex_lock(&mutex_current_op2);
 		current_op2_id+=step_op2;
 		pthread_mutex_unlock(&mutex_current_op2);
     }
-    pthread_mutex_unlock(&frame_buffer_s[tmp.frameid].rwmutex);
     //pthread_cond_signal(&cond);
     //print FPS
     //printf("\033[2J");
@@ -214,8 +226,26 @@ void *show_frame(void *arg){
 		int tmpmode = mode;
     	pthread_mutex_unlock(&mutex_mode); 
         if(tmpmode == 0){
-	    	while(!frame_buffer_s[tmpdrawid].fetch || tmpdrawid % step_m == 0 && !frame_buffer_s[tmpdrawid].draw_m);
-	    	//while(!frame_buffer_s[tmpdrawid].fetch);
+	    	while(!frame_buffer_s[tmpdrawid].fetch){			
+				if(tmpdrawid % step_m == 0){
+					while(!frame_buffer_s[tmpdrawid].draw_m){
+						//printf("stuck in frame %d draw_m\n",tmpdrawid);
+						;
+					}
+				}
+				if(tmpdrawid % step_op1 == 0){
+					while(!frame_buffer_s[tmpdrawid].draw_op1){
+						//printf("stuck in frame %d draw_op1\n",tmpdrawid);
+						;
+					}
+				}
+				if(tmpdrawid % step_op2 == 0){
+					while(!frame_buffer_s[tmpdrawid].draw_op2){
+						//printf("stuck in frame %d draw_op2\n",tmpdrawid);
+						;
+					}
+				}
+			}
 	    	draw_box(frame_buffer[tmpdrawid%BUFFERSIZE].wholeframe,886,560,1334,1008+1,0,0,255);
    	    	draw_box(frame_buffer[tmpdrawid%BUFFERSIZE].wholeframe,438-1,560,886,1008+1,255,0,0);
     		draw_box(frame_buffer[tmpdrawid%BUFFERSIZE].wholeframe,1334,560,1782+1,1008+1,255,0,0);
@@ -377,8 +407,14 @@ else{
 	//initial every mutex
     for(int i = 0;i < BUFFERSIZE;i++)pthread_mutex_init(&frame_buffer[i].rwmutex,NULL);
     for(int i = 0;i < 2000;i++){
-		pthread_mutex_init(&frame_buffer_s[i].rwmutex,NULL);
-		pthread_cond_init(&frame_buffer_s[i].cond,NULL);
+		pthread_mutex_init(&frame_buffer_s[i].fetch_mutex,NULL);
+		pthread_mutex_init(&frame_buffer_s[i].draw_mmutex,NULL);
+		pthread_mutex_init(&frame_buffer_s[i].draw_op1mutex,NULL);
+		pthread_mutex_init(&frame_buffer_s[i].draw_op2mutex,NULL);
+		pthread_cond_init(&frame_buffer_s[i].fetchcond,NULL);
+		pthread_cond_init(&frame_buffer_s[i].draw_mcond,NULL);
+		pthread_cond_init(&frame_buffer_s[i].draw_op1cond,NULL);
+		pthread_cond_init(&frame_buffer_s[i].draw_op2cond,NULL);
 	}
     pthread_mutex_init(&mutex,NULL);
     pthread_mutex_init(&mutex_mode,NULL);
