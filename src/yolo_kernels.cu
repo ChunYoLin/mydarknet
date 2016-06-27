@@ -242,6 +242,7 @@ void *show_frame(void *arg){
         if(tmpmode == 0){
 	    	while(!frame_buffer_s[tmpdrawid].fetch){			
 				if(tmpdrawid % step_m == 0){
+<<<<<<< HEAD
 					//while(!frame_buffer_s[tmpdrawid].draw_m){
 						//printf("stuck in frame %d draw_m\n",tmpdrawid);
 					//	;
@@ -258,6 +259,24 @@ void *show_frame(void *arg){
 						//printf("stuck in frame %d draw_op2\n",tmpdrawid);
 						//;
 					//}
+=======
+					while(!frame_buffer_s[tmpdrawid].draw_m){
+						//printf("stuck in frame %d draw_m\n",tmpdrawid);
+						;
+					}
+				}
+				if(tmpdrawid % step_op1 == 0){
+					while(!frame_buffer_s[tmpdrawid].draw_op1){
+						//printf("stuck in frame %d draw_op1\n",tmpdrawid);
+						;
+					}
+				}
+				if(tmpdrawid % step_op2 == 0){
+					while(!frame_buffer_s[tmpdrawid].draw_op2){
+						//printf("stuck in frame %d draw_op2\n",tmpdrawid);
+						;
+					}
+>>>>>>> 2992c552343c03a871ca9a8dd854e981c6afefca
 				}
 			}
 	    	draw_box(frame_buffer[tmpdrawid%BUFFERSIZE].wholeframe,886,560,1334,1008+1,0,0,255);
