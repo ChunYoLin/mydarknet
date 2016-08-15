@@ -2,7 +2,7 @@
 #include "utils.h"
 #include <stdio.h>
 #include <math.h>
-
+//#include "brake_light_gpu.cpp"
 #ifdef OPENCV
 #include "cv.h"
 #include "opencv2/highgui/highgui_c.h"
@@ -119,18 +119,184 @@ void draw_bbox(image a, box bbox, int w, float r, float g, float b)
         draw_box(a, left+i, top+i, right-i, bot-i, r, g, b);
     }
 }
+int cal_boxdetected_info(image im, int num, float thresh, box *boxes, float **probs, char **names, image *labels, int classes, int Elastic, box_adjusted boxlist_out[10]){
+    int i;
+	int k = 0;
+    for(i = 0; i < num; ++i){
+        int Class = max_index(probs[i], classes);
+        float prob = probs[i][Class];
+        if(prob > thresh){
+            int width = pow(prob, 1./2.)*10+1;
+            //printf("%s: %.2f\n",names[Class], prob);
+            int offset = Class*17 % classes;
+            float red = get_color(0,offset,classes);
+            float green = get_color(1,offset,classes);
+            float blue = get_color(2,offset,classes);
+            float rgb[3];
+            rgb[0] = red;
+            rgb[1] = green;
+            rgb[2] = blue;
+            box b = boxes[i];
+            int left,right,top,bot;
+	    if(!Elastic){
+            left  = (b.x-b.w/2.)*im.w;
+            right = (b.x+b.w/2.)*im.w;
+            top   = (b.y-b.h/2.)*im.h;
+            bot   = (b.y+b.h/2.)*im.h;
+	    	if(left < 0) left = 0;
+			if(right > im.w-1) right = im.w-1;
+			if(top < 0) top = 0;
+			if(bot > im.h-1) bot = im.h-1;
+	    }
+	    else if(Elastic == 1){
+			left  = (b.x-b.w/2.)*448;
+			right = (b.x+b.w/2.)*448;
+			top   = (b.y-b.h/2.)*448;
+			bot   = (b.y+b.h/2.)*448;
+			if(left < 0) left = 0;
+			if(right > im.w-1) right = 448-1;
+			if(top < 0) top = 0;
+			if(bot > im.h-1) bot = 448-1;
+			left += 886;
+	    	right += 886;
+	    	top += 560;
+	    	bot += 560;	
+	    }
+	    else if(Elastic == 2){
+	    	left  = (b.x-b.w/2.)*448;
+			right = (b.x+b.w/2.)*448;
+			top   = (b.y-b.h/2.)*448;
+			bot   = (b.y+b.h/2.)*448;
+			if(left < 0) left = 0;
+			if(right > im.w-1) right = 448-1;
+			if(top < 0) top = 0;
+			if(bot > im.h-1) bot = 448-1;
+			left += 438;
+	    	right += 438;
+	    	top += 560;
+	    	bot += 560;
+	    }
+	    else if(Elastic == 3){
+	    	left  = (b.x-b.w/2.)*448;
+			right = (b.x+b.w/2.)*448;
+			top   = (b.y-b.h/2.)*448;
+			bot   = (b.y+b.h/2.)*448;
+			if(left < 0) left = 0;
+			if(right > im.w-1) right = 448-1;
+			if(top < 0) top = 0;
+			if(bot > im.h-1) bot = 448-1;
+			left += 1334;
+	    	right += 1334;
+	    	top += 560;
+	    	bot += 560;
+	    }
+	    else if(Elastic == 4){
+	    	left  = (b.x-b.w/2.)*448;
+			right = (b.x+b.w/2.)*448;
+			top   = (b.y-b.h/2.)*448;
+			bot   = (b.y+b.h/2.)*448;
+			if(left < 0) left = 0;
+			if(right > im.w-1) right = 448-1;
+			if(top < 0) top = 0;
+			if(bot > im.h-1) bot = 448-1;
+			left += 886;
+	    	right += 886;
+	    	top += 112;
+	    	bot += 112;
+	    }
+	    else if(Elastic == 5){
+	    	left  = (b.x-b.w/2.)*448;
+			right = (b.x+b.w/2.)*448;
+			top   = (b.y-b.h/2.)*448;
+			bot   = (b.y+b.h/2.)*448;
+			if(left < 0) left = 0;
+			if(right > im.w-1) right = 448-1;
+			if(top < 0) top = 0;
+			if(bot > im.h-1) bot = 448-1;
+			left += 438;
+	    	right += 438;
+	    	top += 112;
+	    	bot += 112;
+	    }
+	    else if(Elastic == 6){
+	    	left  = (b.x-b.w/2.)*448;
+			right = (b.x+b.w/2.)*448;
+			top   = (b.y-b.h/2.)*448;
+			bot   = (b.y+b.h/2.)*448;
+			if(left < 0) left = 0;
+			if(right > im.w-1) right = 448-1;
+			if(top < 0) top = 0;
+			if(bot > im.h-1) bot = 448-1;
+			left += 1334;
+	    	right += 1334;
+	    	top += 112;
+	    	bot += 112;
+	    }
+	    else if(Elastic == 7){
+	    	left  = (b.x-b.w/2.)*448;
+			right = (b.x+b.w/2.)*448;
+			top   = (b.y-b.h/2.)*448;
+			bot   = (b.y+b.h/2.)*448;
+			if(left < 0) left = 0;
+			if(right > im.w-1) right = 448-1;
+			if(top < 0) top = 0;
+			if(bot > im.h-1) bot = 448-1;
+			left += 0;
+	    	right += 0;
+	    	top += 112;
+	    	bot += 112;
+	    }
+	    else if(Elastic == 8){
+	    	left  = (b.x-b.w/2.)*448;
+			right = (b.x+b.w/2.)*448;
+			top   = (b.y-b.h/2.)*448;
+			bot   = (b.y+b.h/2.)*448;
+			if(left < 0) left = 0;
+			if(right > im.w-1) right = 448-1;
+			if(top < 0) top = 0;
+			if(bot > im.h-1) bot = 448-1;
+			left += 0;
+	    	right += 0;
+	    	top += 560;
+	    	bot += 560;
+		}
+		if(Class == 6){
+			boxlist_out[k].left = left;
+			boxlist_out[k].right = right;
+			boxlist_out[k].top = top;
+			boxlist_out[k].bot = bot;
+			k++;
+		}
+		if (labels) draw_label(im, top + width, left, labels[Class], rgb);
+            draw_box_width(im, left, top, right, bot, width, red, green, blue);
 
+		//printf("left0:%d left1:%d right:%d top:%d bot:%d\n",left,boxlist_out[k].left,right,top,bot);
+		/*
+	    if(Class == 0){
+		int CarHeightInPixel = bot-top;
+		float MetersPerPixel = CarHeightInMeters/CarHeightInPixel;
+		float CarDepth = (top+bot)/2*MetersPerPixel;
+		char CarDepth_str[10];
+		CvPoint TextPos = cvPoint((right+left)/2,(bot+top)/2);
+		sprintf(CarDepth_str,"%.2f",CarDepth);
+		//draw_text(im,CarDepth_str,TextPos);
+	    }*/
+        }
+    }
+	printf("box_num :%d\n",k);
+	return k;
+}
 void draw_detections(image im, int num, float thresh, box *boxes, float **probs, char **names, image *labels, int classes,int Elastic)
 {
     int i;
 
     for(i = 0; i < num; ++i){
-        int class = max_index(probs[i], classes);
-        float prob = probs[i][class];
+        int Class = max_index(probs[i], classes);
+        float prob = probs[i][Class];
         if(prob > thresh){
             int width = pow(prob, 1./2.)*10+1;
-            //printf("%s: %.2f\n",names[class], prob);
-            int offset = class*17 % classes;
+            //printf("%s: %.2f\n",names[Class], prob);
+            int offset = Class*17 % classes;
             float red = get_color(0,offset,classes);
             float green = get_color(1,offset,classes);
             float blue = get_color(2,offset,classes);
@@ -264,10 +430,10 @@ void draw_detections(image im, int num, float thresh, box *boxes, float **probs,
 	    }
 
 		
-	    if (labels) draw_label(im, top + width, left, labels[class], rgb);
+	    if (labels) draw_label(im, top + width, left, labels[Class], rgb);
             draw_box_width(im, left, top, right, bot, width, red, green, blue);
 	    /*
-	    if(class == 0){
+	    if(Class == 0){
 		int CarHeightInPixel = bot-top;
 		float MetersPerPixel = CarHeightInMeters/CarHeightInPixel;
 		float CarDepth = (top+bot)/2*MetersPerPixel;
@@ -351,8 +517,8 @@ void constrain_image(image im)
 
 void normalize_image(image p)
 {
-    float *min = calloc(p.c, sizeof(float));
-    float *max = calloc(p.c, sizeof(float));
+    float *min = (float*)calloc(p.c, sizeof(float));
+    float *max = (float*)calloc(p.c, sizeof(float));
     int i,j;
     for(i = 0; i < p.c; ++i) min[i] = max[i] = p.data[i*p.h*p.w];
 
@@ -381,7 +547,7 @@ void normalize_image(image p)
 image copy_image(image p)
 {
     image copy = p;
-    copy.data = calloc(p.h*p.w*p.c, sizeof(float));
+    copy.data = (float*)calloc(p.h*p.w*p.c, sizeof(float));
     memcpy(copy.data, p.data, p.h*p.w*p.c*sizeof(float));
     return copy;
 }
@@ -456,7 +622,7 @@ void save_image(image im, const char *name)
     char buff[256];
     //sprintf(buff, "%s (%d)", name, windows);
     sprintf(buff, "%s.png", name);
-    unsigned char *data = calloc(im.w*im.h*im.c, sizeof(char));
+    unsigned char *data = (unsigned char*)calloc(im.w*im.h*im.c, sizeof(char));
     int i,k;
     for(k = 0; k < im.c; ++k){
         for(i = 0; i < im.w*im.h; ++i){
@@ -525,7 +691,7 @@ image make_empty_image(int w, int h, int c)
 image make_image(int w, int h, int c)
 {
     image out = make_empty_image(w,h,c);
-    out.data = calloc(h*w*c, sizeof(float));
+    out.data = (float*)calloc(h*w*c, sizeof(float));
     return out;
 }
 
@@ -919,8 +1085,8 @@ Mat image_to_Mat(image img, int w, int h, int depth, int c)
    cvReleaseImage(&src);
     
    return dst;
-}*/
-
+}
+*/
 
 image load_image_cv(char *filename, int channels)
 {

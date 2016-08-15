@@ -152,7 +152,6 @@ int gpu_processLanes(vector<Vec4i> &lines, Mat &temp_frame, Mat &frame, int* res
 
 
 int gpu_lane_detection(Mat input, int* result, int size, int &current){
-
 	Size video_size = Size(1920, 1080);
 	Size temp_frame_size = Size(1920, 1080/3.5 - 70);
 	Mat temp_frame = Mat(temp_frame_size, CV_8UC3);
