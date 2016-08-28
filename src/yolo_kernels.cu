@@ -30,7 +30,7 @@ extern "C" void draw_yolo(image im, int num, float thresh, box *boxes, float **p
 extern "C" char *voc_names[];
 extern "C" image voc_labels[];
 extern "C" void draw_text(image a, char Text[], CvPoint TextPos);
-#define BUFFERSIZE 300
+#define BUFFERSIZE 400
 #define step_m 1
 #define step_op1 1
 #define step_op2 1
@@ -40,6 +40,9 @@ int result[RESULT_SIZE] = {0};
 int current = 0;
 static float **probs;
 static box *boxes;
+static box *boxesM[BUFFERSIZE];
+static box *boxesOP1[BUFFERSIZE];
+static box *boxesOP2[BUFFERSIZE];
 static network net;
 static image in   ;
 
@@ -47,12 +50,8 @@ static cv::VideoCapture cap;
 static cv::VideoWriter cap_out;
 static float fps = 0;
 static float demo_thresh = 0;
-//static int w, h, depth, c, step= 0;
-//static int MODE = -1;
+
 timer_t timer_fetch,timer_m,timer_op1,timer_op2;
-
-
-
 typedef struct ObjDetArg{
     int frameid;
     int draw;
@@ -62,77 +61,112 @@ typedef struct Ela_frame{
     int frameid;
     image wholeframe;
 	box_adjusted box_detected[10];
-	int box_detected_num; 
-	//IplImage *wholeframe_ipl;
+	int box_detected_num;
+	box boxesM;
+	box boxesOP1;
+	box boxesOP2;
 }Eframe;
 typedef struct Ela_frame_state{
-    pthread_mutex_t fetch_mutex;
-	pthread_mutex_t draw_mmutex;
-	pthread_mutex_t draw_op1mutex;
-	pthread_mutex_t draw_op2mutex;
-	pthread_cond_t fetch_cond;
-	pthread_cond_t draw_mcond;
-	pthread_cond_t draw_op1cond;
-	pthread_cond_t draw_op2cond;
     volatile int fetch;
     volatile int draw_m;
     volatile int draw_op1;
     volatile int draw_op2;
+	volatile int detect_M;
+	volatile int detect_OP1;
+	volatile int detect_OP2;
 }Eframe_s;
+
 //global variable declare
 volatile int mode = 0;
 threadpool thpool_cpu = thpool_init(1);
 threadpool thpool_gpu = thpool_init(1);
-//Eframe *frame_buffer = (Eframe*)malloc(sizeof(Eframe)*BUFFERSIZE);
-Eframe frame_buffer[BUFFERSIZE] = {0};
+static Eframe frame_buffer[BUFFERSIZE] = {0};
 Mat frame_buffer_m[BUFFERSIZE];
 Eframe_s frame_buffer_s[2000] = {0};
-//static const Eframe zeroEframe;
 volatile int current_fetch_id = 0;
 volatile int current_m_id = 0;
 volatile int current_op1_id = 0;
 volatile int current_op2_id = 0;
 volatile int current_draw_id = 0;
+static int fetchjobnum = 0;
+static int detect_mjobnum = 0;
+static int detect_op1jobnum = 0;
+static int detect_op2jobnum = 0;
 float *X;
 float *predictions;
 pthread_mutex_t mutex;
 pthread_mutex_t mutex_mode;
 pthread_mutex_t mutex_current_fetch;
-pthread_mutex_t mutex_current_m;
-pthread_mutex_t mutex_current_op1;
-pthread_mutex_t mutex_current_op2;
-pthread_mutex_t mutex_current_draw;
-pthread_mutex_t mutex_fetchjob;
-pthread_mutex_t mutex_detect_mjob;
-pthread_mutex_t mutex_detect_op1job;
-pthread_mutex_t mutex_detect_op2job;
 pthread_cond_t cond;
 static CvCapture *capture;
 //IplImage *frame;
 struct timeval tval_before, tval_after, tval_result,tv;
 struct timezone tz;
 int s = 0;
-void *fetch_in_thread(void *Elastic){
-    gettimeofday(&tv,NULL);
-    pthread_mutex_lock(&mutex_current_fetch);
-    //printf("time: %ld ",tv.tv_usec/1000);
-    //printf("start fetch frame %d \n",current_fetch_id);
-    pthread_mutex_unlock(&mutex_current_fetch);
-    cv::Mat frame_m;
-    //frame_buffer[current_fetch_id%BUFFERSIZE].wholeframe_mat = frame_m;
+int keepM = 0;
+int keepOP1 = 0;
+int keepOP2 = 0;
+box *boxesM_keep;
+box *boxesOP1_keep;
+box *boxesOP2_keep;
+void *fetch_in_thread(void *arg){
+	detection_layer l = net.layers[net.n-1];
+	if(current_fetch_id > 10){
+		// M
+		if(frame_buffer_s[current_fetch_id-10].detect_M){
+			draw_detections(frame_buffer[(current_fetch_id-10)%BUFFERSIZE].wholeframe, l.side*l.side*l.n, demo_thresh, boxesM[(current_fetch_id-10)%BUFFERSIZE], probs, voc_names, voc_labels, CLS_NUM, 1);
+			boxesM_keep = boxesM[(current_fetch_id-10)%BUFFERSIZE];
+			keepM = 2;
+		}	
+		else {
+			if(keepM<=0)boxesM_keep = boxes;
+			draw_detections(frame_buffer[(current_fetch_id-10)%BUFFERSIZE].wholeframe, l.side*l.side*l.n, demo_thresh, boxesM_keep, probs, voc_names, voc_labels, CLS_NUM, 1);
+			keepM--;
+		}
+		// OP1
+		if(frame_buffer_s[current_fetch_id-10].detect_OP1){
+			draw_detections(frame_buffer[(current_fetch_id-10)%BUFFERSIZE].wholeframe, l.side*l.side*l.n, demo_thresh, boxesOP1[(current_fetch_id-10)%BUFFERSIZE], probs, voc_names, voc_labels, CLS_NUM, 1);
+			boxesOP1_keep = boxesOP1[(current_fetch_id-10)%BUFFERSIZE];
+			keepOP1 = 2;
+		}
+		else {
+			if(keepOP1<=0)boxesOP1_keep = boxes;
+			draw_detections(frame_buffer[(current_fetch_id-10)%BUFFERSIZE].wholeframe, l.side*l.side*l.n, demo_thresh, boxesOP1_keep, probs, voc_names, voc_labels, CLS_NUM, 1);
+			keepOP1--;
+		}
+		// OP2
+		if(frame_buffer_s[current_fetch_id-10].detect_OP2){
+			draw_detections(frame_buffer[(current_fetch_id-10)%BUFFERSIZE].wholeframe, l.side*l.side*l.n, demo_thresh, boxesOP2[(current_fetch_id-10)%BUFFERSIZE], probs, voc_names, voc_labels, CLS_NUM, 1);
+			boxesOP2_keep = boxesOP2[(current_fetch_id-10)%BUFFERSIZE];
+			keepOP2 = 2;
+		}
+		else {
+			if(keepOP2<=0)boxesOP2_keep = boxes;
+			draw_detections(frame_buffer[(current_fetch_id-10)%BUFFERSIZE].wholeframe, l.side*l.side*l.n, demo_thresh, boxesM_keep, probs, voc_names, voc_labels, CLS_NUM, 1);
+			keepOP2--;
+		}
+		draw_box(frame_buffer[(current_fetch_id-10)%BUFFERSIZE].wholeframe,886,560,1334,1008+1,0,0,255);
+		draw_box(frame_buffer[(current_fetch_id-10)%BUFFERSIZE].wholeframe,438-1,560,886,1008+1,255,0,0);
+		draw_box(frame_buffer[(current_fetch_id-10)%BUFFERSIZE].wholeframe,1334,560,1782+1,1008+1,255,0,0);
+		//show_image(frame_buffer[(current_fetch_id-10)%BUFFERSIZE].wholeframe,"YOLO");			
+		cvWaitKey(1);
+	}
+	int jobid = *((int*) arg);
+	//assert(jobid == current_fetch_id);
+	gettimeofday(&tv,NULL);
+    printf("time: %ld ",tv.tv_usec/1000);
+    printf("start fetch frame %d \n",current_fetch_id); 
+	cv::Mat frame_m;
 	cap >> frame_m;
 	gettimeofday(&tv,NULL);
 	//printf("time: %ld ",tv.tv_usec/1000);
 	//printf("start detect frame %d's lane\n",current_fetch_id);
-
-	int output = gpu_lane_detection(frame_m,result,RESULT_SIZE,current);
+	//int output = gpu_lane_detection(frame_m,result,RESULT_SIZE,current);
 	gettimeofday(&tv,NULL); 
     //printf("time: %ld ",tv.tv_usec/1000);
 	//printf("finish detect frame %d's lane \n",current_fetch_id);
     IplImage frame = frame_m;
 	//frame = cvQueryFrame(capture);
-    //frame_buffer[current_fetch_id%BUFFERSIZE].wholeframe_ipl = &frame;
-	//cvSaveImage("foo2.png",&frame_buffer[current_fetch_id%BUFFERSIZE].wholeframe_ipl);
 	in = ipl_to_image(&frame);
     rgbgr_image(in);
     free_image(frame_buffer[current_fetch_id%BUFFERSIZE].wholeframe);
@@ -140,51 +174,51 @@ void *fetch_in_thread(void *Elastic){
     frame_buffer_m[current_fetch_id%BUFFERSIZE] = frame_m;
     frame_buffer[current_fetch_id%BUFFERSIZE].frameid = current_fetch_id;
     gettimeofday(&tv,NULL); 
-    //printf("time: %ld ",tv.tv_usec/1000);
-    //printf("finish fetch frame %d \n",current_fetch_id);
+    printf("time: %ld ",tv.tv_usec/1000);
+    printf("finish fetch frame %d \n",current_fetch_id);
 	
-    frame_buffer_s[current_fetch_id].fetch = 1;
-
-    current_fetch_id++;
-    return 0;
+    frame_buffer_s[current_fetch_id].fetch = 1;	
+	current_fetch_id++;
+	return 0;
 }
 
 void *detect_in_thread(void *arg)
 {
-    
     ODA tmp = *((ODA*)arg);
     image ROI;
-    Eframe *detectframe;
+    Eframe *detectframe;	
 	Mat detectframe_m;
 	while(!frame_buffer_s[tmp.frameid].fetch);
     detectframe = &frame_buffer[tmp.frameid%BUFFERSIZE];
 	detectframe_m = frame_buffer_m[tmp.frameid%BUFFERSIZE];
-	gettimeofday(&tv,&tz);
-    //printf("time: %ld ",tv.tv_usec/1000);
     if(tmp.draw == 0){
 		ROI = detectframe->wholeframe;
     }
     else if(tmp.draw == 1){
 		ROI = crop_image(detectframe->wholeframe,886,560,448,448);
-		//printf("start detect frame %d's mandatory \n",tmp.frameid);
+		gettimeofday(&tv,&tz);
+		printf("time: %ld ",tv.tv_usec/1000);
+		printf("start detect frame %d's mandatory \n",tmp.frameid);
     }
     else if(tmp.draw == 2){
 		ROI = crop_image(detectframe->wholeframe,438,560,448,448);
-    	//printf("start detect frame %d's optional1 \n",tmp.frameid);
+		gettimeofday(&tv,&tz);
+		printf("time: %ld ",tv.tv_usec/1000);
+    	printf("start detect frame %d's optional1 \n",tmp.frameid);
     }
     else if(tmp.draw == 3){
 		ROI = crop_image(detectframe->wholeframe,1334,560,448,448);
-		//printf("start detect frame %d's optional2 \n",tmp.frameid);
+		gettimeofday(&tv,&tz);
+		printf("time: %ld ",tv.tv_usec/1000);
+		printf("start detect frame %d's optional2 \n",tmp.frameid);
     }
     float nms = .4;
     detection_layer l = net.layers[net.n-1];
     X = ROI.data;
     predictions = network_predict(net, X);
     free_image(ROI);
-    convert_yolo_detections(predictions, l.classes, l.n, l.sqrt, l.side, 1, 1, demo_thresh, probs, boxes, 0);
-    if (nms > 0) do_nms(boxes, probs, l.side*l.side*l.n, l.classes, nms);
 	memset(detectframe->box_detected, 0, sizeof(detectframe->box_detected));
-    //draw_detections(detectframe->wholeframe, l.side*l.side*l.n, demo_thresh, boxes, probs, voc_names, voc_labels, CLS_NUM,tmp.draw);
+	/*
 	detectframe->box_detected_num = cal_boxdetected_info(detectframe->wholeframe, l.side*l.side*l.n, demo_thresh, boxes, probs, voc_names, voc_labels, CLS_NUM, tmp.draw, detectframe->box_detected);
 	for(int i = 0;i < detectframe->box_detected_num;i++){	
 		int x = detectframe->box_detected[i].left;
@@ -196,147 +230,109 @@ void *detect_in_thread(void *arg)
 		cv::Mat car = detectframe_m(region_of_interest);
 		bool warning = Brake_light(car);
 		printf("warning : %d\n",warning);
-	}
+	}*/
 	gettimeofday(&tv,&tz);
-    //printf("time: %ld ",tv.tv_usec/1000);
+    printf("time: %ld ",tv.tv_usec/1000);
     if(tmp.draw == 1){
-		pthread_mutex_lock(&frame_buffer_s[tmp.frameid].draw_mmutex);
+		convert_yolo_detections(predictions, l.classes, l.n, l.sqrt, l.side, 1, 1, demo_thresh, probs, boxesM[tmp.frameid%BUFFERSIZE], 0);
+		if (nms > 0) do_nms(boxesM[tmp.frameid%BUFFERSIZE], probs, l.side*l.side*l.n, l.classes, nms);
+		frame_buffer_s[tmp.frameid].detect_M = 1;
 		frame_buffer_s[tmp.frameid].draw_m = 1;
-		pthread_mutex_unlock(&frame_buffer_s[tmp.frameid].draw_mmutex);
-		//printf("finish detect frame %d's mandatory \n",tmp.frameid);
-		pthread_mutex_lock(&mutex_current_m);
-		current_m_id+=step_m;
-		pthread_mutex_unlock(&mutex_current_m);
+		printf("finish detect frame %d's mandatory \n",tmp.frameid);
     }
     else if(tmp.draw == 2){
-		pthread_mutex_lock(&frame_buffer_s[tmp.frameid].draw_op1mutex);
+		convert_yolo_detections(predictions, l.classes, l.n, l.sqrt, l.side, 1, 1, demo_thresh, probs, boxesOP1[tmp.frameid], 0);
+		if (nms > 0) do_nms(boxesOP1[tmp.frameid], probs, l.side*l.side*l.n, l.classes, nms);
+		frame_buffer_s[tmp.frameid].detect_OP1 = 1;
 		frame_buffer_s[tmp.frameid].draw_op1 = 1;
-		pthread_mutex_unlock(&frame_buffer_s[tmp.frameid].draw_op1mutex);
-		//printf("finish detect frame %d's optional1 \n",tmp.frameid);
-		pthread_mutex_lock(&mutex_current_op1);
-		current_op1_id+=step_op1;
-		pthread_mutex_unlock(&mutex_current_op1);
+		printf("finish detect frame %d's optional1 \n",tmp.frameid);
     }
     else if(tmp.draw == 3){
-		pthread_mutex_lock(&frame_buffer_s[tmp.frameid].draw_op2mutex);
+		convert_yolo_detections(predictions, l.classes, l.n, l.sqrt, l.side, 1, 1, demo_thresh, probs, boxesOP2[tmp.frameid], 0);
+		if (nms > 0) do_nms(boxesOP2[tmp.frameid], probs, l.side*l.side*l.n, l.classes, nms);
+		frame_buffer_s[tmp.frameid].detect_OP2 = 1;
 		frame_buffer_s[tmp.frameid].draw_op2 = 1;
-		pthread_mutex_unlock(&frame_buffer_s[tmp.frameid].draw_op2mutex);
-    	//printf("finish detect frame %d's optional2 \n",tmp.frameid);
-		pthread_mutex_lock(&mutex_current_op2);
-		current_op2_id+=step_op2;
-		pthread_mutex_unlock(&mutex_current_op2);
+    	printf("finish detect frame %d's optional2 \n",tmp.frameid);
     }
-    //pthread_cond_signal(&cond);
-    //print FPS
-    //printf("\033[2J");
-    //printf("\033[1;1H");
-    //printf("\nFPS:%.0f\n",fps);
-    //printf("Objects:\n\n");
 
     return 0;
 }
-
+/*
 void *show_frame(void *arg){
+	int drawid = 0;
+	box *boxesM_keep;
+	int keep = 0;
     while(1){
-		pthread_mutex_lock(&mutex_current_draw);
-		int tmpdrawid = current_draw_id;
-		pthread_mutex_unlock(&mutex_current_draw);
-		pthread_mutex_lock(&mutex_mode);
 		int tmpmode = mode;
-    	pthread_mutex_unlock(&mutex_mode); 
+		detection_layer l = net.layers[net.n-1];
         if(tmpmode == 0){
-	    	while(!frame_buffer_s[tmpdrawid].fetch){			
-				if(tmpdrawid % step_m == 0){
-					//while(!frame_buffer_s[tmpdrawid].draw_m){
-						//printf("stuck in frame %d draw_m\n",tmpdrawid);
-					//	;
-					//}
-				}
-				if(tmpdrawid % step_op1 == 0){
-					//while(!frame_buffer_s[tmpdrawid].draw_op1){
-						//printf("stuck in frame %d draw_op1\n",tmpdrawid);
-						//;
-					//}
-				}
-				if(tmpdrawid % step_op2 == 0){
-					//while(!frame_buffer_s[tmpdrawid].draw_op2){
-						//printf("stuck in frame %d draw_op2\n",tmpdrawid);
-						//;
-					//}
-				}
+	    	while(!frame_buffer_s[drawid].fetch){
+				printf("waiting fetch frame %d\n",drawid);
 			}
-	    	draw_box(frame_buffer[tmpdrawid%BUFFERSIZE].wholeframe,886,560,1334,1008+1,0,0,255);
-   	    	draw_box(frame_buffer[tmpdrawid%BUFFERSIZE].wholeframe,438-1,560,886,1008+1,255,0,0);
-    		draw_box(frame_buffer[tmpdrawid%BUFFERSIZE].wholeframe,1334,560,1782+1,1008+1,255,0,0);
-    		gettimeofday(&tv,&tz);
-    		//printf("time: %ld ",tv.tv_usec/1000);
-	   		//printf("finish drawing frame %d \n",current_draw_id);
-	    	show_image(frame_buffer[tmpdrawid%BUFFERSIZE].wholeframe,"YOLO");			
+			
+			if(frame_buffer_s[drawid].detect_M){
+				draw_detections(frame_buffer[drawid%BUFFERSIZE].wholeframe, l.side*l.side*l.n, demo_thresh, boxesM[drawid], probs, voc_names, voc_labels, CLS_NUM, 1);
+				boxesM_keep = boxesM[drawid];
+				keep = 2;
+			}
+			
+			else {
+				if(keep<=0)boxesM_keep = boxes;
+				draw_detections(frame_buffer[drawid%BUFFERSIZE].wholeframe, l.side*l.side*l.n, demo_thresh, boxesM_keep, probs, voc_names, voc_labels, CLS_NUM, 1);
+				keep--;
+			}
+			gettimeofday(&tv,&tz);
+    		printf("time: %ld ",tv.tv_usec/1000);
+	   		printf("start drawing frame %d \n",drawid);
+			draw_box(frame_buffer[drawid%BUFFERSIZE].wholeframe,886,560,1334,1008+1,0,0,255);
+   	    	draw_box(frame_buffer[drawid%BUFFERSIZE].wholeframe,438-1,560,886,1008+1,255,0,0);
+    		draw_box(frame_buffer[drawid%BUFFERSIZE].wholeframe,1334,560,1782+1,1008+1,255,0,0);
+    		show_image(frame_buffer[drawid%BUFFERSIZE].wholeframe,"YOLO");			
 	    	cvWaitKey(1);
-			pthread_mutex_lock(&mutex_current_draw);
-	    	current_draw_id++;
-			pthread_mutex_unlock(&mutex_current_draw);
+			gettimeofday(&tv,&tz);
+    		printf("time: %ld ",tv.tv_usec/1000);
+	   		printf("finish drawing frame %d \n",drawid);
+
+	    	drawid++;
 		}
     }
-}
+}*/
+
 void timerHandler( int sig, siginfo_t *si, void *uc ){
     timer_t *tidp;
     tidp = (timer_t *)si->si_value.sival_ptr;
     ODA *tmp = (ODA*)malloc(sizeof(ODA));
-    static int fetchjobnum = 0;
-    static int detect_mjobnum = 0;
-    static int detect_op1jobnum = 0;
-    static int detect_op2jobnum = 0;
     if ( *tidp == timer_fetch ){
-		pthread_mutex_lock(&mutex_fetchjob);
 		gettimeofday(&tv,&tz);
-    	//printf("time: %d ",tv.tv_usec/1000);
-		//printf("add work fetch frame %d\n",fetchjobnum);
-		thpool_add_work(thpool_cpu,fetch_in_thread,0);
+    	printf("time: %d ",tv.tv_usec/1000);
+		printf("add work fetch frame %d\n",fetchjobnum);
+		int cmp = fetchjobnum;
+		thpool_add_work(thpool_cpu,fetch_in_thread,&cmp);
 		fetchjobnum++;
-		pthread_mutex_unlock(&mutex_fetchjob);
     }
     else if ( *tidp == timer_m ){
-		pthread_mutex_lock(&mutex_current_fetch);
-        tmp->frameid = current_fetch_id;
-        pthread_mutex_unlock(&mutex_current_fetch);
-		//pthread_mutex_lock(&mutex_detect_mjob);
-		//tmp->frameid = detect_mjobnum;
+        tmp->frameid = fetchjobnum;
 		tmp->draw = 1;
 		gettimeofday(&tv,&tz);
-    	//printf("time: %ld ",tv.tv_usec/1000);
-		//printf("add work detect frame %d's mandatory \n",tmp->frameid);
+    	printf("time: %ld ",tv.tv_usec/1000);
+		printf("add work detect frame %d's mandatory \n",tmp->frameid);
         thpool_add_work(thpool_gpu,detect_in_thread,tmp);
-		//detect_mjobnum+=step_m;
-		//pthread_mutex_unlock(&mutex_detect_mjob);
     }
     else if ( *tidp == timer_op1 ){
-		pthread_mutex_lock(&mutex_current_fetch);
-		tmp->frameid = current_fetch_id;
-		pthread_mutex_unlock(&mutex_current_fetch);
-		//pthread_mutex_lock(&mutex_detect_op1job);
-		//tmp->frameid = detect_op1jobnum;
+		tmp->frameid = fetchjobnum;
 		tmp->draw = 2;
 		gettimeofday(&tv,&tz);
-    	//printf("time: %ld ",tv.tv_usec/1000);
-		//printf("add work detect frame %d's optional1 \n",tmp->frameid);
+    	printf("time: %ld ",tv.tv_usec/1000);
+		printf("add work detect frame %d's optional1 \n",tmp->frameid);
         thpool_add_work(thpool_gpu,detect_in_thread,tmp);
-		//detect_op1jobnum+=step_op1;
-		//pthread_mutex_unlock(&mutex_detect_op1job);
     }
     else if ( *tidp == timer_op2 ){
-		pthread_mutex_lock(&mutex_current_fetch);
 		tmp->frameid = current_fetch_id;
-		pthread_mutex_unlock(&mutex_current_fetch);
-		//pthread_mutex_lock(&mutex_detect_op2job);
-		//tmp->frameid = detect_op2jobnum;
 		tmp->draw = 3;
 		gettimeofday(&tv,&tz);
-    	//printf("time: %ld ",tv.tv_usec/1000);
-		//printf("add work detect frame %d's optional2 \n",tmp->frameid);
+    	printf("time: %ld ",tv.tv_usec/1000);
+		printf("add work detect frame %d's optional2 \n",tmp->frameid);
         thpool_add_work(thpool_gpu,detect_in_thread,tmp);
-		//detect_op2jobnum+=step_op2;
-		//pthread_mutex_unlock(&mutex_detect_op2job);
     }
 }
 int makeTimer( timer_t *timerID, int expireMS, int intervalMS ){
@@ -367,13 +363,13 @@ int makeTimer( timer_t *timerID, int expireMS, int intervalMS ){
 
 void *TIMER(void *arg){
     gettimeofday(&tv,&tz);
-    //printf("time: %ld ",tv.tv_usec/1000);
-    //printf("start all timer\n");
+    printf("time: %ld ",tv.tv_usec/1000);
+    printf("start all timer\n");
     if(mode == 0){
 		makeTimer(&timer_fetch, 33, 33);
     	makeTimer(&timer_m, 100, 100);
-		//makeTimer(&timer_op1, 200, 200);
-    	//makeTimer(&timer_op2, 200, 200);
+		makeTimer(&timer_op1, 100, 100);
+    	makeTimer(&timer_op2, 100, 100);
     }
     else if(mode == 1){
     	makeTimer(&timer_fetch, 33, 33);
@@ -433,41 +429,28 @@ else{
     if(!cap.isOpened()) error("Couldn't read video file.\n");
 }
 	//initial every mutex
-    for(int i = 0;i < BUFFERSIZE;i++)pthread_mutex_init(&frame_buffer[i].rwmutex,NULL);
-    for(int i = 0;i < 2000;i++){
-		pthread_mutex_init(&frame_buffer_s[i].fetch_mutex,NULL);
-		pthread_mutex_init(&frame_buffer_s[i].draw_mmutex,NULL);
-		pthread_mutex_init(&frame_buffer_s[i].draw_op1mutex,NULL);
-		pthread_mutex_init(&frame_buffer_s[i].draw_op2mutex,NULL);
-		pthread_cond_init(&frame_buffer_s[i].fetch_cond,NULL);
-		pthread_cond_init(&frame_buffer_s[i].draw_mcond,NULL);
-		pthread_cond_init(&frame_buffer_s[i].draw_op1cond,NULL);
-		pthread_cond_init(&frame_buffer_s[i].draw_op2cond,NULL);
-	}
     pthread_mutex_init(&mutex,NULL);
-    pthread_mutex_init(&mutex_mode,NULL);
     pthread_mutex_init(&mutex_current_fetch,NULL);
-    pthread_mutex_init(&mutex_current_m,NULL);
-    pthread_mutex_init(&mutex_current_op1,NULL);
-    pthread_mutex_init(&mutex_current_op2,NULL);
-	pthread_mutex_init(&mutex_current_draw,NULL);
-    pthread_mutex_init(&mutex_fetchjob,NULL);
-    pthread_mutex_init(&mutex_detect_mjob,NULL);
-    pthread_mutex_init(&mutex_detect_op1job,NULL);
-    pthread_mutex_init(&mutex_detect_op2job,NULL);
-    pthread_cond_init(&cond,NULL);
+	pthread_cond_init(&cond,NULL);
+
 
     detection_layer l = net.layers[net.n-1];
     boxes = (box *)calloc(l.side*l.side*l.n, sizeof(box));
+    
     probs = (float **)calloc(l.side*l.side*l.n, sizeof(float *));
-    for(int j = 0; j < l.side*l.side*l.n; ++j) probs[j] = (float *)calloc(l.classes, sizeof(float *));
+    for(int j = 0; j < BUFFERSIZE;j++){
+		boxesM[j] = (box *)calloc(l.side*l.side*l.n, sizeof(box));
+		boxesOP1[j] = (box *)calloc(l.side*l.side*l.n, sizeof(box));
+		boxesOP2[j] = (box *)calloc(l.side*l.side*l.n, sizeof(box));
+	}
+	for(int j = 0; j < l.side*l.side*l.n; ++j) probs[j] = (float *)calloc(l.classes, sizeof(float *));
     pthread_t timer,drawer,modecontroller;
     ODA *arg = (ODA*)malloc(sizeof(ODA));
     pthread_create(&modecontroller,0,MODE_CONTROLLER,0);
-    while(1){
+    //pthread_create(&drawer,0,show_frame,0);
+	while(1){
 		pthread_cond_wait(&cond,&mutex);
         pthread_create(&timer,0,TIMER,0);
-        pthread_create(&drawer,0,show_frame,0);
     }
     //while(1);
 }
