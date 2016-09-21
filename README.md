@@ -22,4 +22,5 @@ for example:
 #Cfg And Weights File
 You have to first go to YOLO website to see how to generate these two file
 [http://pjreddie.com/darknet/yolo/]
+
 If you want to train your own customize model, you can refer to [http://guanghan.info/blog/en/my-works/train-yolo/]
